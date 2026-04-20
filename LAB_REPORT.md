@@ -107,3 +107,53 @@ In detached HEAD state, `.pes/HEAD` contains a raw commit hash (e.g., `a1b2c3d4.
 - If the user remembers (or recorded) the commit hash, they can directly check it out or create a branch pointing to it: `git branch recovery-branch <hash>`.
 - Git provides `git reflog`, which logs every change to HEAD, allowing users to find the orphaned commit hash. PES-VCS does not have a reflog, so without the hash these commits would eventually be lost to garbage collection.
 
+
+### Q6.1: Garbage Collection Algorithm
+
+**Algorithm to find and delete unreachable objects:**
+
+1. **Mark phase** — Build a set of all reachable object hashes:
+   - Start from every branch tip: read all files in `.pes/refs/heads/` to get commit hashes.
+   - For each commit, mark it as reachable, then:
+     - Read the commit object, mark its tree hash as reachable.
+     - Recursively walk the tree: mark every subtree and blob hash as reachable.
+     - Follow the parent pointer and repeat until reaching a root commit (no parent).
+   - Use a **hash set** (e.g., a hash table keyed by ObjectID) to track reachable hashes. This gives O(1) lookup and insertion.
+
+2. **Sweep phase** — Walk the entire `.pes/objects/` directory:
+   - For each object file, reconstruct its hash from the shard directory name + filename.
+   - If the hash is **not** in the reachable set, delete the file.
+   - Remove empty shard directories afterward.
+
+**Estimation for 100,000 commits and 50 branches:**
+- **Commits visited:** Each branch walks its history, but commits shared between branches are visited only once (the hash set deduplicates). In the worst case (completely disjoint histories), this is 100,000 commit objects. In practice with shared ancestry, it is fewer.
+- **Trees and blobs:** Each commit points to one root tree. If each tree has ~50 entries on average, and there are ~100,000 unique trees, that is ~5,000,000 tree entry lookups. With deduplication (shared blobs across commits), the unique reachable objects are likely in the range of **200,000–500,000** total objects to visit.
+- The hash set keeps memory usage proportional to the number of unique reachable objects (each entry is 32 bytes for SHA-256), so roughly 6–16 MB for this scale.
+
+### Q6.2: Race Condition Between GC and Concurrent Commit
+
+**Why concurrent GC and commit is dangerous:**
+
+Consider this timeline with two concurrent processes:
+
+| Time | Commit process | GC process |
+|------|---------------|------------|
+| T1 | Writes blob `B1` to object store | |
+| T2 | Writes tree `T1` referencing `B1` | |
+| T3 | | Starts mark phase — walks all reachable refs |
+| T4 | | Mark phase completes. `B1` and `T1` are **not** reachable yet (commit object hasn't been written, branch ref hasn't been updated) |
+| T5 | Writes commit `C1` referencing `T1` | |
+| T6 | | Sweep phase: deletes `B1` and `T1` as unreachable |
+| T7 | Updates `refs/heads/main` → `C1` | |
+
+Now `C1` is the HEAD commit, but its tree `T1` and blob `B1` have been deleted. The repository is **corrupted** — `pes log`, `pes checkout`, and any operation that reads this commit will fail with missing object errors.
+
+**How Git's real GC avoids this:**
+
+1. **Grace period:** `git gc` only deletes unreachable objects that are older than a configurable threshold (default: 2 weeks, controlled by `gc.pruneExpire`). Newly created objects during a concurrent commit will be recent and therefore survive the sweep even if momentarily unreachable.
+
+2. **Lock files:** Git uses `.git/gc.pid` lock files to prevent multiple GC processes from running simultaneously.
+
+3. **Reachability from all refs + reflogs:** Git's mark phase also traverses the reflog, which records recent HEAD changes. This means even recently dereferenced commits (and their trees/blobs) remain reachable during GC.
+
+4. **Two-phase approach:** In practice, `git gc` first repacks objects into packfiles and only then prunes loose objects, reducing the window for races.

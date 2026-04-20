@@ -200,8 +200,15 @@ int commit_create(const char *message, ObjectID *commit_id_out) {
         fprintf(stderr, "error: failed to build tree from index\n");
         return -1;
     }
+    // Step 2: Read current HEAD as parent (may fail for first commit)
+    if (head_read(&commit.parent) == 0) {
+        commit.has_parent = 1;
+    } else {
+        commit.has_parent = 0;
+    }
 
-    // TODO: Read parent, fill metadata, serialize, write, update HEAD
+    // TODO: Fill metadata, serialize, write, update HEAD
+
     (void)message; (void)commit_id_out;
     return -1;
 }

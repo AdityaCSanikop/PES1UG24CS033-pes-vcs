@@ -123,7 +123,16 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     ((char *)full_object)[header_len] = '\0';
     memcpy((char *)full_object + header_len + 1, data, len);
 
-    // TODO: Implement remaining steps (hash, directory creation, atomic write)
+    // Step 2: Compute SHA-256 hash of the full object
+    compute_hash(full_object, full_len, id_out);
+
+    // Step 3: Check if object already exists (deduplication)
+    if (object_exists(id_out)) {
+        free(full_object);
+        return 0;
+    }
+
+    // TODO: Implement directory creation and atomic write
     free(full_object);
     return -1;
 }

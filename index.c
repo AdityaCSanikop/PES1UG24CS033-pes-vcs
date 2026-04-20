@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
+#include <inttypes.h>
 
 // Forward declarations (implemented in object.c)
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
@@ -151,10 +152,45 @@ int index_status(const Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_load(Index *index) {
-    // TODO: Implement index loading
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+    index->count = 0;
+    
+    FILE *f = fopen(INDEX_FILE, "r");
+    if (!f) {
+        // If file doesn't exist, return empty index (not an error)
+        if (errno == ENOENT) {
+            return 0;
+        }
+        return -1;
+    }
+    
+    while (index->count < MAX_INDEX_ENTRIES) {
+        IndexEntry *entry = &index->entries[index->count];
+        
+        // Parse line: <mode-octal> <64-char-hex-hash> <mtime> <size> <path>
+        char hex[HASH_HEX_SIZE + 1];
+        int result = fscanf(f, "%o %64s %"PRIu64" %u %511s\n",
+                            &entry->mode, hex, &entry->mtime_sec, &entry->size, entry->path);
+        
+        if (result == EOF) {
+            break;  // End of file
+        }
+        
+        if (result != 5) {
+            fclose(f);
+            return -1;  // Parse error
+        }
+        
+        // Convert hex string to binary hash
+        if (hex_to_hash(hex, &entry->hash) != 0) {
+            fclose(f);
+            return -1;
+        }
+        
+        index->count++;
+    }
+    
+    fclose(f);
+    return 0;
 }
 
 // Save the index to .pes/index atomically.

@@ -168,8 +168,12 @@ int index_load(Index *index) {
         
         // Parse line: <mode-octal> <64-char-hex-hash> <mtime> <size> <path>
         char hex[HASH_HEX_SIZE + 1];
-        int result = fscanf(f, "%o %64s %"PRIu64" %u %511s\n",
-                            &entry->mode, hex, &entry->mtime_sec, &entry->size, entry->path);
+        unsigned long long mtime_ull;
+        int result = fscanf(f, "%o %64s %llu %u %511s\n",
+                            &entry->mode, hex, &mtime_ull, &entry->size, entry->path);
+        if (result == 5) {
+            entry->mtime_sec = mtime_ull;
+        }
         
         if (result == EOF) {
             break;  // End of file
@@ -224,8 +228,8 @@ int index_save(const Index *index) {
         hash_to_hex(&entry->hash, hex);
         
         // Format: <mode-octal> <hash-hex> <mtime> <size> <path>
-        if (fprintf(f, "%o %s %"PRIu64" %u %s\n",
-                    entry->mode, hex, entry->mtime_sec, entry->size, entry->path) < 0) {
+        if (fprintf(f, "%o %s %llu %u %s\n",
+                    entry->mode, hex, (unsigned long long)entry->mtime_sec, entry->size, entry->path) < 0) {
             fclose(f);
             unlink(temp_path);
             return -1;
@@ -239,15 +243,18 @@ int index_save(const Index *index) {
         return -1;
     }
     
-    // Sync file descriptor to disk
+    // Sync file descriptor to disk BEFORE closing
     int fd = fileno(f);
-    if (fsync(fd) != 0) {
+    if (fd < 0 || fsync(fd) != 0) {
         fclose(f);
         unlink(temp_path);
         return -1;
     }
     
-    fclose(f);
+    if (fclose(f) != 0) {
+        unlink(temp_path);
+        return -1;
+    }
     
     // Atomically rename temp file to final location
     if (rename(temp_path, INDEX_FILE) != 0) {
@@ -330,8 +337,8 @@ int index_add(Index *index, const char *path) {
     // Update entry fields
     entry->mode = mode;
     entry->hash = blob_hash;
-    entry->mtime_sec = st.st_mtime;
-    entry->size = st.st_size;
+    entry->mtime_sec = (uint64_t)st.st_mtime;
+    entry->size = (uint32_t)st.st_size;
     strncpy(entry->path, path, sizeof(entry->path) - 1);
     entry->path[sizeof(entry->path) - 1] = '\0';
     

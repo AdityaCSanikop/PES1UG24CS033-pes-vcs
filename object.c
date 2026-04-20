@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #include <openssl/evp.h>
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
@@ -94,8 +95,36 @@ int object_exists(const ObjectID *id) {
 //
 // Returns 0 on success, -1 on error.
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
-    // TODO: Implement
-    (void)type; (void)data; (void)len; (void)id_out;
+    // Step 1: Build the header string
+    const char *type_str;
+    switch (type) {
+        case OBJ_BLOB:   type_str = "blob"; break;
+        case OBJ_TREE:   type_str = "tree"; break;
+        case OBJ_COMMIT: type_str = "commit"; break;
+        default:         return -1;
+    }
+
+    // Allocate buffer for header + data
+    char header[256];
+    int header_len = snprintf(header, sizeof(header), "%s %zu", type_str, len);
+    if (header_len < 0 || header_len >= (int)sizeof(header)) {
+        return -1;
+    }
+
+    // Total size: header_len + 1 (null byte) + data
+    size_t full_len = header_len + 1 + len;
+    void *full_object = malloc(full_len);
+    if (!full_object) {
+        return -1;
+    }
+
+    // Copy header, null byte, and data
+    memcpy(full_object, header, header_len);
+    ((char *)full_object)[header_len] = '\0';
+    memcpy((char *)full_object + header_len + 1, data, len);
+
+    // TODO: Implement remaining steps (hash, directory creation, atomic write)
+    free(full_object);
     return -1;
 }
 

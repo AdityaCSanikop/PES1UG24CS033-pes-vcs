@@ -204,10 +204,58 @@ int index_load(Index *index) {
 //
 // Returns 0 on success, -1 on error.
 int index_save(const Index *index) {
-    // TODO: Implement atomic index saving
-    // (See Lab Appendix for logical steps)
-    (void)index;
-    return -1;
+    // Create a mutable copy and sort entries by path
+    Index sorted_index = *index;
+    qsort(sorted_index.entries, sorted_index.count, sizeof(IndexEntry), compare_entries);
+    
+    // Create temporary file
+    char temp_path[256];
+    snprintf(temp_path, sizeof(temp_path), "%s.tmp", INDEX_FILE);
+    
+    FILE *f = fopen(temp_path, "w");
+    if (!f) {
+        return -1;
+    }
+    
+    // Write all entries to temporary file
+    for (int i = 0; i < sorted_index.count; i++) {
+        const IndexEntry *entry = &sorted_index.entries[i];
+        char hex[HASH_HEX_SIZE + 1];
+        hash_to_hex(&entry->hash, hex);
+        
+        // Format: <mode-octal> <hash-hex> <mtime> <size> <path>
+        if (fprintf(f, "%o %s %"PRIu64" %u %s\n",
+                    entry->mode, hex, entry->mtime_sec, entry->size, entry->path) < 0) {
+            fclose(f);
+            unlink(temp_path);
+            return -1;
+        }
+    }
+    
+    // Flush to ensure data is written
+    if (fflush(f) != 0) {
+        fclose(f);
+        unlink(temp_path);
+        return -1;
+    }
+    
+    // Sync file descriptor to disk
+    int fd = fileno(f);
+    if (fsync(fd) != 0) {
+        fclose(f);
+        unlink(temp_path);
+        return -1;
+    }
+    
+    fclose(f);
+    
+    // Atomically rename temp file to final location
+    if (rename(temp_path, INDEX_FILE) != 0) {
+        unlink(temp_path);
+        return -1;
+    }
+    
+    return 0;
 }
 
 // Stage a file for the next commit.

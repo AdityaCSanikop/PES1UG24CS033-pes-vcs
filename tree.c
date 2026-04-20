@@ -120,6 +120,28 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 
 // ─── TODO: Implement these ──────────────────────────────────────────────────
 
+// Recursive helper to build tree levels from index entries.
+// 
+// Handles nested paths by grouping entries at each depth level.
+// For entries like "src/main.c", at depth 0 creates "src" directory entry,
+// then recursively processes entries under "src" at depth 1.
+//
+// Parameters:
+//   entries:   array of index entries to process
+//   count:     number of entries to consider
+//   depth:     current directory depth (0 = root level)
+//   id_out:    output parameter for this subtree's object ID
+//
+// Returns 0 on success, -1 on error.
+static int write_tree_level(const IndexEntry *entries, int count, int depth, ObjectID *id_out) {
+    Tree tree;
+    tree.count = 0;
+    
+    // TODO: Process entries at this depth and recursively handle subdirectories
+    (void)entries; (void)count; (void)depth; (void)id_out; (void)tree;
+    return -1;
+}
+
 // Build a tree hierarchy from the current index and write all tree
 // objects to the object store.
 //
@@ -161,7 +183,6 @@ int tree_from_index(ObjectID *id_out) {
         return 0;
     }
     
-    // TODO: Implement recursive tree building from index entries
-    (void)id_out;
-    return -1;
+    // Build tree hierarchy recursively starting at root level (depth 0)
+    return write_tree_level(index.entries, index.count, 0, id_out);
 }

@@ -23,6 +23,22 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <errno.h>
+
+// Forward declarations (implemented in object.c)
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
+int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out);
+
+// Forward declarations (implemented in pes.h)
+void hash_to_hex(const ObjectID *id, char *hex_out);
+int hex_to_hash(const char *hex, ObjectID *id_out);
+
+// ─── Helper Functions ──────────────────────────────────────────────────────
+
+// Comparator for qsort to sort IndexEntry structs by path
+static int compare_entries(const void *a, const void *b) {
+    return strcmp(((const IndexEntry *)a)->path, ((const IndexEntry *)b)->path);
+}
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
 

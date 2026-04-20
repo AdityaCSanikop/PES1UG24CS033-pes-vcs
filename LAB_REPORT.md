@@ -14,3 +14,13 @@
 
 ![Screenshot 1B](1.b.jpeg)
 
+### Phase 2: Tree Objects
+
+**Screenshot 2A** — `./test_tree` output showing all tests passing:
+
+![Screenshot 2A](2.a.jpeg)
+
+**Screenshot 2B** — `xxd` of a raw tree object (first 20 lines):
+
+![Screenshot 2B](2.b.jpeg)
+

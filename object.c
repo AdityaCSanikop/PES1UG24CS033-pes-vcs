@@ -132,7 +132,37 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
         return 0;
     }
 
-    // TODO: Implement directory creation and atomic write
+    // Step 4: Create shard directory if it doesn't exist
+    char shard_dir[512];
+    char hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(id_out, hex);
+    snprintf(shard_dir, sizeof(shard_dir), "%s/%.2s", OBJECTS_DIR, hex);
+
+    if (mkdir(shard_dir, 0755) < 0 && errno != EEXIST) {
+        free(full_object);
+        return -1;
+    }
+
+    // Step 5: Write to temporary file
+    char temp_path[512];
+    snprintf(temp_path, sizeof(temp_path), "%s/.tmp_XXXXXX", shard_dir);
+    
+    int fd = mkstemp(temp_path);
+    if (fd < 0) {
+        free(full_object);
+        return -1;
+    }
+
+    // Write the full object to temp file
+    if (write(fd, full_object, full_len) != (ssize_t)full_len) {
+        close(fd);
+        unlink(temp_path);
+        free(full_object);
+        return -1;
+    }
+
+    // TODO: Implement fsync and atomic rename
+    close(fd);
     free(full_object);
     return -1;
 }

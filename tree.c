@@ -137,8 +137,66 @@ static int write_tree_level(const IndexEntry *entries, int count, int depth, Obj
     Tree tree;
     tree.count = 0;
     
-    // TODO: Process entries at this depth and recursively handle subdirectories
-    (void)entries; (void)count; (void)depth; (void)id_out; (void)tree;
+    int i = 0;
+    while (i < count && tree.count < MAX_TREE_ENTRIES) {
+        const IndexEntry *entry = &entries[i];
+        
+        // Extract the path component at this depth level
+        // For "src/main.c" at depth 0, extract "src"
+        // For "src/main.c" at depth 1, extract "main.c"
+        const char *path = entry->path;
+        const char *component_start = path;
+        const char *next_slash = NULL;
+        int current_depth = 0;
+        
+        // Find the component at the desired depth
+        for (const char *p = path; *p; p++) {
+            if (*p == '/') {
+                if (current_depth == depth) {
+                    next_slash = p;
+                    break;
+                }
+                current_depth++;
+                component_start = p + 1;
+            }
+        }
+        
+        // Extract component name length
+        size_t component_len;
+        if (next_slash) {
+            component_len = next_slash - component_start;
+        } else {
+            component_len = strlen(component_start);
+        }
+        
+        // Create tree entry
+        TreeEntry *tree_entry = &tree.entries[tree.count];
+        if (component_len >= sizeof(tree_entry->name)) {
+            return -1;  // Component name too long
+        }
+        
+        strncpy(tree_entry->name, component_start, component_len);
+        tree_entry->name[component_len] = '\0';
+        
+        if (next_slash) {
+            // This is a directory - mark as such
+            tree_entry->mode = MODE_DIR;
+            
+            // TODO: Recursively process entries under this directory
+            (void)tree_entry;
+            return -1;
+        } else {
+            // This is a file - use entry's mode and hash
+            tree_entry->mode = entry->mode;
+            tree_entry->hash = entry->hash;
+            i++;
+        }
+        
+        tree.count++;
+    }
+    
+    // TODO: Serialize and write this tree level
+    (void)tree;
     return -1;
 }
 

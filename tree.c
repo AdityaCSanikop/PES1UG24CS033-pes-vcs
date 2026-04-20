@@ -179,12 +179,54 @@ static int write_tree_level(const IndexEntry *entries, int count, int depth, Obj
         tree_entry->name[component_len] = '\0';
         
         if (next_slash) {
-            // This is a directory - mark as such
+            // This is a directory - recursively build subtree
             tree_entry->mode = MODE_DIR;
             
-            // TODO: Recursively process entries under this directory
-            (void)tree_entry;
-            return -1;
+            // Collect all entries belonging to this directory
+            int subentries_count = 0;
+            int j = i;
+            while (j < count && subentries_count < MAX_TREE_ENTRIES) {
+                const IndexEntry *sub_entry = &entries[j];
+                const char *sub_path = sub_entry->path;
+                const char *sub_component_start = sub_path;
+                const char *sub_next_slash = NULL;
+                int sub_depth = 0;
+                
+                // Extract component at this depth
+                for (const char *p = sub_path; *p; p++) {
+                    if (*p == '/') {
+                        if (sub_depth == depth) {
+                            sub_next_slash = p;
+                            break;
+                        }
+                        sub_depth++;
+                        sub_component_start = p + 1;
+                    }
+                }
+                
+                size_t sub_component_len;
+                if (sub_next_slash) {
+                    sub_component_len = sub_next_slash - sub_component_start;
+                } else {
+                    sub_component_len = strlen(sub_component_start);
+                }
+                
+                // Check if component matches current directory
+                if (sub_component_len == component_len &&
+                    strncmp(sub_component_start, component_start, component_len) == 0) {
+                    subentries_count++;
+                    j++;
+                } else {
+                    break;
+                }
+            }
+            
+            // Recursively build subtree for this directory
+            if (write_tree_level(&entries[i], subentries_count, depth + 1, &tree_entry->hash) != 0) {
+                return -1;
+            }
+            
+            i = j;
         } else {
             // This is a file - use entry's mode and hash
             tree_entry->mode = entry->mode;
@@ -195,9 +237,20 @@ static int write_tree_level(const IndexEntry *entries, int count, int depth, Obj
         tree.count++;
     }
     
-    // TODO: Serialize and write this tree level
-    (void)tree;
-    return -1;
+    // Serialize and write this tree level to object store
+    void *data = NULL;
+    size_t len = 0;
+    if (tree_serialize(&tree, &data, &len) != 0) {
+        return -1;
+    }
+    
+    if (object_write(OBJ_TREE, data, len, id_out) != 0) {
+        free(data);
+        return -1;
+    }
+    
+    free(data);
+    return 0;
 }
 
 // Build a tree hierarchy from the current index and write all tree
